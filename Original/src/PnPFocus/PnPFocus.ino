@@ -32,11 +32,12 @@ char param[MAXCOMMAND];
 char line[MAXCOMMAND];
 int isRunning = 0;
 int speed = 32;
+int stepdelay = 8;
 int eoc = 0;
 int idx = 0;
 long pos=0;
 long distanceToGo = 0;
-long currentPosition = 1000;
+long currentPosition = 8000;
 float tempC = 0;
 long timer_millis = 0;
 
@@ -72,6 +73,32 @@ long EEPROMReadlong(long address)
 }
 #endif
 
+// given a moonlite "speed" set step delay var
+void setStepDelay(int speed)
+{
+  switch (speed)
+  {
+    case 32:
+        stepdelay = 32;
+        break;
+    case 16:
+        stepdelay = 16;
+        break;
+    case  8:
+        stepdelay = 8;
+        break;
+    case  4:
+        stepdelay = 4;
+        break;
+    case  2:
+        stepdelay = 4;
+        break;
+    default:
+        stepdelay = 4;
+        break;
+  }
+}
+
 void setup()
 {  
   Serial.begin(9600);
@@ -80,6 +107,8 @@ void setup()
   
   memset(line, 0, MAXCOMMAND);
   //currentPosition=EEPROMReadlong(0);
+
+  setStepDelay(speed);
 
   delay(1000);
   
@@ -110,7 +139,7 @@ void loop(){
           currentPosition = 0;        
       distanceToGo = distanceToGo - 1;
       myStepper.step(1);
-      delay(2);
+      delay(stepdelay);
     } else {
       if (distanceToGo < 0) {
         currentPosition = currentPosition - 1;
@@ -118,7 +147,7 @@ void loop(){
             currentPosition = 65535;
         distanceToGo = distanceToGo + 1;
         myStepper.step(-1);
-        delay(2);
+        delay(stepdelay);
       } else {
          isRunning = 0;
          myStepper.release();
@@ -189,6 +218,7 @@ void loop(){
     // stop a move
     if (!strcasecmp(cmd, "FQ")) {
       isRunning = 0;
+      myStepper.release();
     } 
 
 
@@ -223,6 +253,7 @@ void loop(){
     if (!strcasecmp(cmd, "SD")) {
       speed = hexstr2long(param);
       // the Moonlite speed setting is ignored.
+      setStepDelay(speed);
     }
 
     // get the current temperature

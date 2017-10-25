@@ -115,6 +115,12 @@ void ArdumotoStepper::setSpeed(long whatSpeed)
 void ArdumotoStepper::setStepMode(int mode)
 {
   this->stepmode = mode;
+  // HACK - assumes 4/8 steps for FULL/HALF
+
+  if (mode == FULLSTEP)
+    this->number_of_steps = 4;
+  else
+    this->number_of_steps = 8;
 }
 
 /*
@@ -183,6 +189,7 @@ void ArdumotoStepper::step(int steps_to_move)
   }
 }
 
+#if 0
 /*
  * Moves the motor forward or backwards.
  */
@@ -216,55 +223,88 @@ void ArdumotoStepper::stepMotor(int thisStep)
   }
 }
 
+#else
+void ArdumotoStepper::stepMotor(int thisStep)
+{
+  switch (thisStep) {
+    case 0:  // 1010
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 1:  // 0110
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 2:  //0101
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 3:  //1001
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+  }
+}
+
+#endif
+
 void ArdumotoStepper::halfstepMotor(int thisStep)
 {
   switch (thisStep) {
     case 0:    // 1010
-      analogWrite(motor_pin_1, HIGH);
-      digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, HIGH);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
     case 1:    // 0010
-      analogWrite(motor_pin_1, LOW);
+      analogWrite(motor_pin_1, 0);
       digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, HIGH);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
     case 2:    // 0110
-      analogWrite(motor_pin_1, LOW);
-      digitalWrite(motor_dir_1, HIGH);
-      analogWrite(motor_pin_2, HIGH);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
     case 3:    // 0100
-      analogWrite(motor_pin_1, LOW);
-      digitalWrite(motor_dir_1, HIGH);
-      analogWrite(motor_pin_2, LOW);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 0);
       digitalWrite(motor_dir_2, LOW);
     break;
     case 4:    //0101
-      analogWrite(motor_pin_1, LOW);
-      digitalWrite(motor_dir_1, HIGH);
-      analogWrite(motor_pin_2, LOW);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
     case 5:    //0001
-      analogWrite(motor_pin_1, LOW);
+      analogWrite(motor_pin_1, 0);
       digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, LOW);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
     case 6:    //1001
-      analogWrite(motor_pin_1, HIGH);
-      digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, LOW);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
     case 7:    //1000
-      analogWrite(motor_pin_1, HIGH);
-      digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, LOW);
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 0);
       digitalWrite(motor_dir_2, LOW);
     break;
   } 
