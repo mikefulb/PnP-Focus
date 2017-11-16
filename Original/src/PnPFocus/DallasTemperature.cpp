@@ -84,6 +84,11 @@ void DallasTemperature::begin(void){
 
     while (_wire->search(deviceAddress)){
 
+        int i;
+        for (i=0; i<8; i++)
+          Serial.print(deviceAddress[i]);
+        Serial.println();
+
         if (validAddress(deviceAddress)){
 
             if (!parasite && readPowerSupply(deviceAddress)) parasite = true;

@@ -3,6 +3,20 @@
 // Original code by orly.andico@gmail.com, 13 April 2014
 // Modified by Anat Ruangrassamee (aruangra@yahoo.com), 26 September 2017
 
+
+//
+// MSF
+//
+// NOTE on wiring to an Arduino
+//
+// DS18B20 ->  Connect PWR and GND together and connect to GND on Arduino
+//             Connect DATA to A1 on Arduino and pull-up with 4.7k to +5V for parasitic power
+//
+// PROGRAM PROTECTION ->  Connect 10uF (or greater) cap between GND and RESET - use jumper so you can
+//                        remove and program Arduino then put jumper back and you can't accidentally
+//                        reprogram the Arduino!  
+
+
 #include <EEPROM.h>
 
 #include "OneWire.h"
@@ -103,6 +117,10 @@ void setup()
 {  
   Serial.begin(9600);
 
+  Serial.println("PnPFocus V1a-msf");
+
+  Serial.println("Looking for temperature sensors");
+
   sensors.begin();
   
   memset(line, 0, MAXCOMMAND);
@@ -119,16 +137,24 @@ void setup()
 }
 
 void loop(){
-  if ((millis() - timer_millis) > 60000) {
-    timer_millis=millis();
-    sensors.requestTemperatures();
-    tempC = sensors.getTempCByIndex(0);
-    if ((tempC < -50) || (tempC > 50)){
-//      Serial.print("NA  ");
-    } else {
-//      Serial.print(String(round(tempC)) + "C");
-    } 
-  }
+  // update temperature every 10 seconds unless moving!
+  if (!isRunning)
+    if ((millis() - timer_millis) > 10000) {
+      timer_millis=millis();
+      sensors.requestTemperatures();
+      tempC = sensors.getTempCByIndex(0);
+  
+      // set 0 to 1 to get output debug message
+      if (0) {
+        if ((tempC < -50) || (tempC > 50)){
+          Serial.print("NA  ");
+        } else {
+          //Serial.print(String(round(tempC)) + "C");
+          Serial.print(tempC);
+          Serial.print("C");
+        } 
+      }
+    }
          
 //  Serial.print(String(currentPosition)+ "     ");
   
@@ -154,7 +180,6 @@ void loop(){
       }
     }
   }
-   
 
   // read the command until the terminating # character
   while (Serial.available() && !eoc) {
