@@ -44,6 +44,20 @@
  *    3  0  1  0  1
  *    4  1  0  0  1
  *
+ *
+ * The sequence of halfstep control signals for 4 control wires is as follows:
+ *  Step C0 C1 C2 C3
+ *     1  1  0  1  0
+ *     2  0  0  1  0
+ *     3  0  1  1  0
+ *     4  0  1  0  0
+ *     5  0  1  0  1
+ *     6  0  0  0  1
+ *     7  1  0  0  1
+ *     8  1  0  0  0
+ *
+ *
+ *
  * The sequence of controls signals for 2 control wires is as follows
  * (columns C1 and C2 from above):
  *
@@ -78,6 +92,8 @@ ArdumotoStepper::ArdumotoStepper(int number_of_steps)
   this->motor_dir_1 = 12;
   this->motor_dir_2 = 13;
 
+  this->stepmode = FULLSTEP;  // FULLSTEP or HALFSTEP
+
   // setup the pins on the microcontroller:
   pinMode(this->motor_pin_1, OUTPUT);
   pinMode(this->motor_pin_2, OUTPUT);
@@ -91,6 +107,37 @@ ArdumotoStepper::ArdumotoStepper(int number_of_steps)
 void ArdumotoStepper::setSpeed(long whatSpeed)
 {
   this->step_delay = 60L * 1000L * 1000L / this->number_of_steps / whatSpeed;
+}
+
+/*
+ * Sets the stepping mode
+ */
+void ArdumotoStepper::setStepMode(int mode)
+{
+  this->stepmode = mode;
+  // HACK - assumes 4/8 steps for FULL/HALF
+
+  if (mode == FULLSTEP)
+    this->number_of_steps = 4;
+  else
+    this->number_of_steps = 8;
+}
+
+/*
+ * Gets the stepping mode
+ */
+int ArdumotoStepper::getStepMode(void)
+{
+  return this->stepmode;
+}
+
+/*
+ * release stepper (turn off power)
+ */
+void ArdumotoStepper::release(void)
+{
+  analogWrite(motor_pin_1, 0);
+  analogWrite(motor_pin_2, 0);  
 }
 
 /*
@@ -133,11 +180,16 @@ void ArdumotoStepper::step(int steps_to_move)
       }
       // decrement the steps left:
       steps_left--;
-      stepMotor(this->step_number % 4);
+
+      if (this->stepmode == FULLSTEP)
+        stepMotor(this->step_number % 4);
+      else
+        halfstepMotor(this->step_number % 8);
     }
   }
 }
 
+#if 0
 /*
  * Moves the motor forward or backwards.
  */
@@ -170,6 +222,95 @@ void ArdumotoStepper::stepMotor(int thisStep)
     break;
   }
 }
+
+#else
+void ArdumotoStepper::stepMotor(int thisStep)
+{
+  switch (thisStep) {
+    case 0:  // 1010
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 1:  // 0110
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 2:  //0101
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 3:  //1001
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+  }
+}
+
+#endif
+
+void ArdumotoStepper::halfstepMotor(int thisStep)
+{
+  switch (thisStep) {
+    case 0:    // 1010
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 1:    // 0010
+      analogWrite(motor_pin_1, 0);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 2:    // 0110
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 3:    // 0100
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 0);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+    case 4:    //0101
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 5:    //0001
+      analogWrite(motor_pin_1, 0);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 6:    //1001
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 7:    //1000
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, HIGH);
+      analogWrite(motor_pin_2, 0);
+      digitalWrite(motor_dir_2, LOW);
+    break;
+  } 
+}
+
+
 
 /*
   version() returns the version of the library:

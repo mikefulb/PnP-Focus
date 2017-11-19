@@ -2,77 +2,42 @@
 //
 // Original code by orly.andico@gmail.com, 13 April 2014
 // Modified by Anat Ruangrassamee (aruangra@yahoo.com), 26 September 2017
+// Modified by Michael Fulbright (mike.fulrbight@pobox.com>, 27 November 2017
+
+
+//
+// MSF
+//
+// NOTE on wiring to an Arduino
+//
+// DS18B20 ->  Connect PWR and GND together and connect to GND on Arduino
+//             Connect DATA to A1 on Arduino and pull-up with 4.7k to +5V for parasitic power
+//
+// PROGRAM PROTECTION ->  Connect 10uF (or greater) cap between GND and RESET - use jumper so you can
+//                        remove and program Arduino then put jumper back and you can't accidentally
+//                        reprogram the Arduino!  
+
 
 #include <EEPROM.h>
-
-#include <LiquidCrystal.h>
 
 #include "OneWire.h"
 #include "DallasTemperature.h"
 
 // Data wire is plugged into pin A1 on the Arduino
 #define ONE_WIRE_BUS A1
+
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
+
 // Pass our oneWire reference to Dallas Temperature. 
 DallasTemperature sensors(&oneWire);
 
 #include "ArdumotoStepper.h"
 
-const int stepsPerRevolution = 5370;  // change this to fit the number of steps per revolution for your motor
+const int stepsPerRevolution = 3600;  // change this to fit the number of steps per revolution for your motor
 
 // initialize the stepper library:
 ArdumotoStepper myStepper(stepsPerRevolution);
-
-LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           // select the pins used on the LCD panel
-
-// define some values used by the panel and buttons
-int lcd_key     = 0;
-int adc_key_in  = 0;
-int flg_btnspeed = 0;
-int flg_lcdlight = 0;
-
-#define btnRIGHT  0
-#define btnUP     1
-#define btnDOWN   2
-#define btnLEFT   3
-#define btnSELECT 4
-#define btnNONE   5
-
-int read_LCD_buttons(){               // read the buttons
-  
-    adc_key_in = analogRead(0);       // read the value from the sensor 
-
-    // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
-    // we add approx 50 to those values and check to see if we are close
-    // We make this the 1st option for speed reasons since it will be the most likely result
-
-    // MODIFICATION (START)
-    delay(6); //switch debounce delay. Increase this delay if incorrect switch selections are returned.
-    if (adc_key_in != analogRead(0)) return btnNONE;  // double checks the keypress. If the two readings are not equal after debounce delay, it tries again.
-    // MODIFICATION (END)
-
-    if (adc_key_in > 1000) return btnNONE; 
-
-    // For V1.1 us this threshold
-    if (adc_key_in < 50)   return btnRIGHT;  
-    if (adc_key_in < 250)  return btnUP; 
-    if (adc_key_in < 450)  return btnDOWN; 
-    if (adc_key_in < 650)  return btnLEFT; 
-    if (adc_key_in < 850)  return btnSELECT;  
-
-   // For V1.0 comment the other threshold and use the one below:
-   /*
-     if (adc_key_in < 50)   return btnRIGHT;  
-     if (adc_key_in < 195)  return btnUP; 
-     if (adc_key_in < 380)  return btnDOWN; 
-     if (adc_key_in < 555)  return btnLEFT; 
-     if (adc_key_in < 790)  return btnSELECT;   
-   */
-
-    return btnNONE;                // when all others fail, return this.
-}
-
 
 #define MAXCOMMAND 8
 
@@ -82,229 +47,210 @@ char param[MAXCOMMAND];
 char line[MAXCOMMAND];
 int isRunning = 0;
 int speed = 32;
+int stepdelay = 8;
 int eoc = 0;
 int idx = 0;
 long pos=0;
-long distanceToGo = 0;
-long currentPosition = 1000;
+volatile long distanceToGo = 0;
+volatile long currentPosition = 8000;
 float tempC = 0;
 long timer_millis = 0;
 
+#if 0
 //This function will write a 4 byte (32bit) long to the eeprom at
 //the specified address to address + 3.
 void EEPROMWritelong(int address, long value)
-      {
-      //Decomposition from a long to 4 bytes by using bitshift.
-      //One = Most significant -> Four = Least significant byte
-      byte four = (value & 0xFF);
-      byte three = ((value >> 8) & 0xFF);
-      byte two = ((value >> 16) & 0xFF);
-      byte one = ((value >> 24) & 0xFF);
-
-      //Write the 4 bytes into the eeprom memory.
-      EEPROM.write(address, four);
-      EEPROM.write(address + 1, three);
-      EEPROM.write(address + 2, two);
-      EEPROM.write(address + 3, one);
-      }
+{
+  //Decomposition from a long to 4 bytes by using bitshift.
+  //One = Most significant -> Four = Least significant byte
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+  
+  //Write the 4 bytes into the eeprom memory.
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
+}
 
 long EEPROMReadlong(long address)
-      {
-      //Read the 4 bytes from the eeprom memory.
-      long four = EEPROM.read(address);
-      long three = EEPROM.read(address + 1);
-      long two = EEPROM.read(address + 2);
-      long one = EEPROM.read(address + 3);
+{
+  //Read the 4 bytes from the eeprom memory.
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+  
+  //Return the recomposed long by using bitshift.
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
+}
+#endif
 
-      //Return the recomposed long by using bitshift.
-      return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
-      }
-
+// given a moonlite "speed" set step delay var
+void setStepDelay(int speed)
+{
+  switch (speed)
+  {
+    case 32:
+        stepdelay = 32;
+        break;
+    case 16:
+        stepdelay = 16;
+        break;
+    case  8:
+        stepdelay = 8;
+        break;
+    case  4:
+        stepdelay = 4;
+        break;
+    case  2:
+        stepdelay = 4;
+        break;
+    default:
+        stepdelay = 4;
+        break;
+  }
+}
 
 void setup()
 {  
   Serial.begin(9600);
-  //Serial1.begin(9600);
+
+  Serial.println("PnPFocus V2a-msf");
+
+  Serial.println("Looking for temperature sensors");
 
   sensors.begin();
   
-  if (flg_lcdlight == 1) {
-     analogWrite(10, 25);  
-  } else {
-     analogWrite(10, 0);                     
-  }
-  
   memset(line, 0, MAXCOMMAND);
-  currentPosition=EEPROMReadlong(0);
+  //currentPosition=EEPROMReadlong(0);
+
+  setStepDelay(speed);
+
+  delay(1000);
   
-   lcd.begin(16, 2);               // start the library
-   lcd.setCursor(0,0);             // set the LCD cursor   position 
-   lcd.print("PnP Focus  T:   ");  // print a simple message on the LCD
-   lcd.setCursor(0,1);             // set the LCD cursor   position 
-   lcd.print("Position:");  // print a simple message on the LCD
+  sensors.requestTemperatures();
+  tempC = sensors.getTempCByIndex(0);
 
-   delay(1000);
-   sensors.requestTemperatures();
-   tempC = sensors.getTempCByIndex(0);
-   lcd.setCursor(13,0);
-   if ((tempC < -50) || (tempC > 50)){
-     lcd.print("NA  ");
-   } else {
-     lcd.print(String(round(tempC)) + "C");
-   }
+  timer_millis=millis();
 
-   timer_millis=millis();
+  // connect timer interrupt to Timer0
+  // we will NOT change anything about Timer0 config since it is used for millis()!
+  OCR0A = 0xAF;
+  TIMSK0 |= _BV(OCIE0A); 
+}
+
+volatile bool enableIntr = false;   // true means interrupt will send pulses and is active
+volatile uint8_t speedcntIntr = 0;  // number of interrupts per step sent
+volatile uint8_t stepcntIntr = 0;   // internal var for interrupt to count steps
+volatile int8_t  dirIntr = 0;       // -1 or 1 - determines direction of steps
+//volatile uint16_t nstepsIntr = 0;   // number of steps to move - modified by interrupt
+//                                   // when it reaches 0 then enableIntr is set false
+// Interrupt is called once a millisecond, 
+SIGNAL(TIMER0_COMPA_vect) 
+{
+  if (enableIntr)
+  {
+    //Serial.write("#");
+    stepcntIntr++;
+    if (!(stepcntIntr % speedcntIntr))
+    {
+      myStepper.step(dirIntr);
+      stepcntIntr = 0;
+      distanceToGo -= dirIntr;
+      currentPosition += dirIntr;
+
+      //Serial.write(".");
+      //Serial.print(distanceToGo);
+
+      // are we done?
+      if (distanceToGo == 0)
+      {
+        enableIntr = false;
+        //Serial.write("$");
+        return;       
+      }
+    }
+  }
 }
 
 
-
 void loop(){
+  // update temperature every 10 seconds!
+  if ((millis() - timer_millis) > 10000) {
+    timer_millis=millis();
+    sensors.requestTemperatures();
+    tempC = sensors.getTempCByIndex(0);
 
-
-      if ((millis() - timer_millis) > 60000) {
-        timer_millis=millis();
-        sensors.requestTemperatures();
-        tempC = sensors.getTempCByIndex(0);
-        lcd.setCursor(13,0);
-        if ((tempC < -50) || (tempC > 50)){
-          lcd.print("NA  ");
-        } else {
-          lcd.print(String(round(tempC)) + "C");
-        } 
-      }
-     
-    
-    lcd_key = read_LCD_buttons();   // read the buttons
-    
-   switch (lcd_key){             
-    
-       case btnRIGHT:{
-         if (isRunning == 0) {             
-            currentPosition = currentPosition + 1;
-            if (currentPosition > 65535)
-                currentPosition = 0;
-            myStepper.step(1);
-             if (flg_btnspeed == 1) {
-                 delay(2);
-             } else {
-                 delay(160);                          
-             }
-         }
-         break;
-       }
-       case btnLEFT:{
-         if (isRunning == 0) { 
-            currentPosition = currentPosition - 1;
-            if (currentPosition < 0)
-                currentPosition = 65535;
-            myStepper.step(-1);
-             if (flg_btnspeed == 1) {
-                 delay(2);
-             } else {
-                 delay(160);                          
-             }
-         }
-         break;
-       }    
-       case btnUP:{
-             flg_lcdlight = 1 - flg_lcdlight;
-             if (flg_lcdlight == 1) {
-                 analogWrite(10, 25);  
-             } else {
-                 analogWrite(10, 0);                     
-             }
-             delay(600);       
-             break;
-       }
-       case btnDOWN:{
-         if (isRunning == 0) { 
-             flg_btnspeed=1-flg_btnspeed; 
-             if (flg_btnspeed == 1) {
-                 lcd.setCursor(0,0);             // set the LCD cursor   position 
-                 lcd.print("FAST MOVEMENT     ");  // print a simple message on the LCD  
-             } else {
-                 lcd.setCursor(0,0);             // set the LCD cursor   position 
-                 lcd.print("SLOW MOVEMENT     ");  // print a simple message on the LCD                           
-             }
-             delay(1000);
-             lcd.setCursor(0,0);             // set the LCD cursor   position 
-             lcd.print("PnP Focus  T:   ");  // print a simple message on the LCD
-             lcd.setCursor(13,0);
-             if ((tempC < -50) || (tempC > 50)){
-               lcd.print("NA  ");
-             } else {
-               lcd.print(String(round(tempC)) + "C");
-             } 
-         }
-         break;
-       }
-       case btnSELECT:{
-             isRunning = 0; // STOP
-             // EEPROM HERE
-             EEPROMWritelong(0, currentPosition);      
-             lcd.setCursor(0,0);             // set the LCD cursor   position 
-             lcd.print("STOPPED & SAVED ");  // print a simple message on the LCD             
-             delay(1000);
-             lcd.setCursor(0,0);             // set the LCD cursor   position 
-             lcd.print("PnP Focus  T:   ");  // print a simple message on the LCD
-             lcd.setCursor(13,0);
-             if ((tempC < -50) || (tempC > 50)){
-               lcd.print("NA  ");
-             } else {
-               lcd.print(String(round(tempC)) + "C");
-             }   
-             break;
-       }
-       case btnNONE:{
-             
-             break;
-       }
-   }
-
-    lcd.setCursor(10,1);          
-    lcd.print(String(currentPosition)+ "     ");
-
-    if (isRunning) {
-      if (distanceToGo > 0) {
-        currentPosition = currentPosition + 1;
-        if (currentPosition > 65535)
-            currentPosition = 0;        
-        distanceToGo = distanceToGo - 1;
-        myStepper.step(1);
-        delay(2);
+    // set 0 to 1 to get output debug message
+    if (0) {
+      if ((tempC < -50) || (tempC > 50)){
+        Serial.print("NA  ");
       } else {
-        if (distanceToGo < 0) {
-          currentPosition = currentPosition - 1;
-          if (currentPosition < 0)
-              currentPosition = 65535;
-          distanceToGo = distanceToGo + 1;
-          myStepper.step(-1);
-          delay(2);
-        } else {
-           isRunning = 0;
-        }
-      }
-    }
-     
-
-    // read the command until the terminating # character
-    while (Serial.available() && !eoc) {
-      inChar = Serial.read();
-      //Serial1.write(inChar);
-      
-      if (inChar != '#' && inChar != ':') {
-        line[idx++] = inChar;
-        if (idx >= MAXCOMMAND) {
-          idx = MAXCOMMAND - 1;
-        }
+        //Serial.print(String(round(tempC)) + "C");
+        Serial.print(tempC);
+        Serial.print("C");
       } 
-      else {
-        if (inChar == '#') {
-          eoc = 1;
-        }
+    }
+  }
+       
+#if 0
+  if (isRunning) {
+    if (distanceToGo > 0) {
+      currentPosition = currentPosition + 1;
+      if (currentPosition > 65535)
+          currentPosition = 0;        
+      distanceToGo = distanceToGo - 1;
+      myStepper.step(1);
+      delay(stepdelay);
+    } else {
+      if (distanceToGo < 0) {
+        currentPosition = currentPosition - 1;
+        if (currentPosition < 0)
+            currentPosition = 65535;
+        distanceToGo = distanceToGo + 1;
+        myStepper.step(-1);
+        delay(stepdelay);
+      } else {
+         isRunning = 0;
+         myStepper.release();
       }
     }
+  }
+#else
+  // did interrupt finish moving
+  if (isRunning)
+  {
+    if (!enableIntr)
+    {
+      isRunning = false;
+      myStepper.release();
+    }
+  }
+#endif
 
+  // heartbeat debug
+  //Serial.write(".");
+
+  // read the command until the terminating # character
+  while (Serial.available() && !eoc) {
+    inChar = Serial.read();
+    //Serial1.write(inChar);
+    
+    if (inChar != '#' && inChar != ':') {
+      line[idx++] = inChar;
+      if (idx >= MAXCOMMAND) {
+        idx = MAXCOMMAND - 1;
+      }
+    } 
+    else {
+      if (inChar == '#') {
+        eoc = 1;
+      }
+    }
+  }
 
   // process the command we got
   if (eoc) {
@@ -324,33 +270,44 @@ void loop(){
     eoc = 0;
     idx = 0;
 
-
-
     // motor is moving - 01 if moving, 00 otherwise
     if (!strcasecmp(cmd, "GI")) {
       if (isRunning) {
         Serial.print("01#");
-        //Serial1.write("01#");
       } 
       else {
         Serial.print("00#");
-        //Serial1.write("00#");
-
-        // EEPROM
-        EEPROMWritelong(0, currentPosition);
       }
     }
 
     // initiate a move
     if (!strcasecmp(cmd, "FG")) {
       isRunning = 1;
+      noInterrupts();
+      enableIntr = true;
+      speedcntIntr = stepdelay;
+      if (distanceToGo < 0)
+        dirIntr = -1;
+      else
+        dirIntr = 1;
+      interrupts();
+
+      Serial.println("Move start");
+      Serial.println(enableIntr);
+      Serial.println(speedcntIntr);
+      Serial.println(distanceToGo);      
     }
 
     // stop a move
     if (!strcasecmp(cmd, "FQ")) {
       isRunning = 0;
+      noInterrupts();
+      enableIntr = false;
+      //nstepsIntr = 0;
+      distanceToGo = 0;
+      interrupts();
+      myStepper.release();
     } 
-
 
     // get the current motor position
     if (!strcasecmp(cmd, "GP")) {
@@ -367,22 +324,17 @@ void loop(){
       distanceToGo = pos - currentPosition;
     }
 
-
-
     // set current motor position
     if (!strcasecmp(cmd, "SP")) {
       pos = hexstr2long(param);
       currentPosition = pos;
-
-      // EEPROM
-      EEPROMWritelong(0, currentPosition);
-      
     }
 
     // set speed, only acceptable values are 02, 04, 08, 10, 20
     if (!strcasecmp(cmd, "SD")) {
       speed = hexstr2long(param);
       // the Moonlite speed setting is ignored.
+      setStepDelay(speed);
     }
 
     // get the current temperature
@@ -427,12 +379,25 @@ void loop(){
  
     // LED backlight value, always return "00"
     if (!strcasecmp(cmd, "GB")) {
-      Serial.print("00#");
+      if (myStepper.getStepMode() == FULLSTEP)
+        Serial.print("00#");
+      else
+        Serial.print("FF#");
     }
 
     // home the motor
     if (!strcasecmp(cmd, "PH")) { 
 
+    }
+
+    // step mode the motor
+    if (!strcasecmp(cmd, "SF")) { 
+      myStepper.setStepMode(FULLSTEP);
+    }
+
+    // step mode the motor
+    if (!strcasecmp(cmd, "SH")) { 
+      myStepper.setStepMode(HALFSTEP);
     }
 
     // firmware value, always return "10"
