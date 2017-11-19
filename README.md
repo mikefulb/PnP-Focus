@@ -1,3 +1,15 @@
+This is a fork of the PnP-Focus project available here:
+
+https://github.com/aruangra/PnP-Focus
+
+I have added half stepping and also made the step generation based on Timer0.
+
+I removed the upload software from my version of the repository as I don't intend on supporting or using it and it is available in the original project.
+
+I have submitted my changes to the upstream project.
+
+What follows is the original README for this project.
+
 # PnP-Focus
 Simplest Arduino-based focus controller
 
