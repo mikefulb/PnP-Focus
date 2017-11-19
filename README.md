@@ -4,6 +4,7 @@ https://github.com/aruangra/PnP-Focus
 
 Changes:
   - Added half stepping and also made the step generation based on Timer0.
+  - Added abibility to control stepping rate.
   - Removed code I'm not using which includes the LCD code.
   - Removed the upload software as I don't intend on supporting or using it.
 
