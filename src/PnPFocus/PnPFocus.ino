@@ -47,6 +47,7 @@ char param[MAXCOMMAND];
 char line[MAXCOMMAND];
 int isRunning = 0;
 int speed = 32;
+volatile bool reverse=false;
 int stepdelay = 8;
 int eoc = 0;
 int idx = 0;
@@ -56,7 +57,7 @@ volatile long currentPosition = 8000;
 float tempC = 0;
 long timer_millis = 0;
 
-#if 0
+
 //This function will write a 4 byte (32bit) long to the eeprom at
 //the specified address to address + 3.
 void EEPROMWritelong(int address, long value)
@@ -86,7 +87,72 @@ long EEPROMReadlong(long address)
   //Return the recomposed long by using bitshift.
   return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
-#endif
+
+// EEPROM data
+//
+// V2b-msf -> write a single long
+//            Byte 0 = Reverse flag - 0 NORMAL FF REVERSE
+//            Byte 1 = Speed
+//            Byte 2 = 00 FULL FF HALF stepping
+//            Byte 3 == UNDEF
+
+void writeEEPROMData()
+{
+  unsigned long l;
+  unsigned long b;
+  
+  l = 0x00;
+  
+  // Byte 0 Reverse Flag
+  l = (reverse) ? 0xFF : 0x00;
+
+  // Byte 1 = Speed
+  l |= speed << 8;
+
+  // Byte 2 = stepping
+  if (myStepper.getStepMode() == FULLSTEP)
+    b = 0x00;
+  else
+    b = 0xFF;
+    
+    l |= b << 16;
+
+  // Byte 3 = UNDEF
+  //l |=  0 << 24;
+
+  EEPROMWritelong(0x0, l);  
+}
+
+void readEEPROMData()
+{
+  unsigned long l;
+  unsigned long b;
+
+  l = EEPROMReadlong(0x00);
+//  Serial.println(l, HEX);
+
+  // Byte 0 Reverse
+  reverse = (l & 0x000000FF);
+//  Serial.println(reverse);
+  
+  // Byte 1 = Speed
+  speed = (l & 0x0000FF00) >> 8;
+//  Serial.println(speed);
+ 
+  if (speed != 0x01 && speed != 0x02 && speed != 0x04 && speed != 0x08 && speed != 0x10 && speed != 0x20)
+    speed = 0x20;
+
+  // Byte 2 = stepping
+  b = (l >> 16) && 0xFF;
+//  Serial.println(b, HEX);
+  if (b)
+    myStepper.setStepMode(HALFSTEP);
+  else
+    myStepper.setStepMode(FULLSTEP);
+
+  // Byte 3 = ignore
+}
+
 
 // given a moonlite "speed" set step delay var
 void setStepDelay(int speed)
@@ -118,14 +184,11 @@ void setup()
 {  
   Serial.begin(9600);
 
-  //Serial.println("PnPFocus V2a-msf");
-
-  //Serial.println("Looking for temperature sensors");
+  readEEPROMData();
 
   sensors.begin();
   
   memset(line, 0, MAXCOMMAND);
-  //currentPosition=EEPROMReadlong(0);
 
   setStepDelay(speed);
 
@@ -157,13 +220,6 @@ SIGNAL(TIMER0_COMPA_vect)
     stepcntIntr++;
     if (!(stepcntIntr % speedcntIntr))
     {
-      myStepper.step(dirIntr);
-      stepcntIntr = 0;
-      distanceToGo -= dirIntr;
-      currentPosition += dirIntr;
-
-      //Serial.write(".");
-      //Serial.print(distanceToGo);
 
       // are we done?
       if (distanceToGo == 0)
@@ -172,6 +228,15 @@ SIGNAL(TIMER0_COMPA_vect)
         //Serial.write("$");
         return;       
       }
+            
+      myStepper.step((reverse) ? -dirIntr : dirIntr);
+      stepcntIntr = 0;
+      distanceToGo -= dirIntr;
+      currentPosition += dirIntr;
+
+      //Serial.write(".");
+      //Serial.print(distanceToGo);
+
     }
   }
 }
@@ -180,7 +245,9 @@ void printInfo()
 {
   int i;
   char tempString[8];
-  
+
+  Serial.println();
+  Serial.println("INFO DUMP");
   Serial.println("PnPFocus V2b-msf");
 
   // position
@@ -197,7 +264,13 @@ void printInfo()
     Serial.println("FULL");
   else
     Serial.println("HALF"); 
-    
+
+  Serial.print("Current Reverse Flag: ");
+  if (reverse)
+    Serial.println("REVERSE");
+  else
+    Serial.println("NORMAL"); 
+        
   // temperature sensors 
   Serial.print("# of temperature sensors: ");
   i = sensors.getDeviceCount();
@@ -206,9 +279,12 @@ void printInfo()
   // FIXME doesnt handle more than 1 temperature sensor
   if (i > 0)
   {
-    Serial.print("  Temperature Sensor 1 = ");
-    sprintf(tempString, "%f", tempC);
-    Serial.print(tempString);
+    Serial.print("  Sensor 1 = ");
+    Serial.print((int)tempC);
+    if ((tempC-(int)tempC) < 0.5)
+      Serial.print(".0");
+    else
+      Serial.print(".5");
     Serial.println(" C");
   }
 
@@ -240,7 +316,7 @@ void loop(){
       if (currentPosition > 65535)
           currentPosition = 0;        
       distanceToGo = distanceToGo - 1;
-      myStepper.step(1);
+      myStepper.step( (reverse) ? -1 : 1);
       delay(stepdelay);
     } else {
       if (distanceToGo < 0) {
@@ -248,7 +324,7 @@ void loop(){
         if (currentPosition < 0)
             currentPosition = 65535;
         distanceToGo = distanceToGo + 1;
-        myStepper.step(-1);
+        myStepper.step( (reverse) ? 1 : -1);
         delay(stepdelay);
       } else {
          isRunning = 0;
@@ -319,20 +395,23 @@ void loop(){
 
     // initiate a move
     if (!strcasecmp(cmd, "FG")) {
-      isRunning = 1;
-      noInterrupts();
-      enableIntr = true;
-      speedcntIntr = stepdelay;
-      if (distanceToGo < 0)
-        dirIntr = -1;
-      else
-        dirIntr = 1;
-      interrupts();
-
-      Serial.println("Move start");
-      Serial.println(enableIntr);
-      Serial.println(speedcntIntr);
-      Serial.println(distanceToGo);      
+      if (distanceToGo != 0)
+      {
+        isRunning = 1;
+        noInterrupts();
+        enableIntr = true;
+        speedcntIntr = stepdelay;
+        if (distanceToGo < 0)
+          dirIntr = -1;
+        else
+          dirIntr = 1;
+        interrupts();
+  
+//        Serial.println("Move start");
+//        Serial.println(enableIntr);
+//        Serial.println(speedcntIntr);
+//        Serial.println(distanceToGo);
+      }      
     }
 
     // stop a move
@@ -448,6 +527,25 @@ void loop(){
       printInfo();
     }
     
+    // set reverse flag - 00 for normal and FF to reverse direction
+    if (!strcasecmp(cmd, "RV")) {
+      long i;
+      
+      i = hexstr2long(param);
+
+      reverse = (i != 0);
+    }   
+
+    // write/read eeprom
+    if (!strcasecmp(cmd, "WR")) {
+      writeEEPROMData();
+    }
+
+    // write/read eeprom
+    if (!strcasecmp(cmd, "RD")) {
+      readEEPROMData();
+    }
+        
   }
   
 } // end loop
