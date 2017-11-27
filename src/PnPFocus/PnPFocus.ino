@@ -118,9 +118,9 @@ void setup()
 {  
   Serial.begin(9600);
 
-  Serial.println("PnPFocus V2a-msf");
+  //Serial.println("PnPFocus V2a-msf");
 
-  Serial.println("Looking for temperature sensors");
+  //Serial.println("Looking for temperature sensors");
 
   sensors.begin();
   
@@ -176,6 +176,43 @@ SIGNAL(TIMER0_COMPA_vect)
   }
 }
 
+void printInfo()
+{
+  int i;
+  char tempString[8];
+  
+  Serial.println("PnPFocus V2b-msf");
+
+  // position
+  sprintf(tempString, "%05d", currentPosition);
+  Serial.print("Current Position: ");
+  Serial.println(tempString);
+
+  // speed and stepping
+  Serial.print("Current Motor Speed: ");
+  Serial.println(speed);
+
+  Serial.print("Current Step Mode: ");
+  if (myStepper.getStepMode() == FULLSTEP)
+    Serial.println("FULL");
+  else
+    Serial.println("HALF"); 
+    
+  // temperature sensors 
+  Serial.print("# of temperature sensors: ");
+  i = sensors.getDeviceCount();
+  Serial.println(i);
+
+  // FIXME doesnt handle more than 1 temperature sensor
+  if (i > 0)
+  {
+    Serial.print("  Temperature Sensor 1 = ");
+    sprintf(tempString, "%f", tempC);
+    Serial.print(tempString);
+    Serial.println(" C");
+  }
+
+}
 
 void loop(){
   // update temperature every 10 seconds!
@@ -340,7 +377,7 @@ void loop(){
     // get the current temperature
     if (!strcasecmp(cmd, "GT")) {
            if ((tempC < -50) || (tempC > 50)){
-                Serial.print("C6#");
+                Serial.print("00C6#");
            } else {
                 char tempString[6];
                 int tpval = (tempC * 2);
@@ -372,13 +409,13 @@ void loop(){
       Serial.print("#");
     }
     
-    // whether half-step is enabled or not, always return "00"
-    if (!strcasecmp(cmd, "GH")) {
+    // LED backlight value, always return "00"
+    if (!strcasecmp(cmd, "GB")) {
       Serial.print("00#");
     }
  
-    // LED backlight value, always return "00"
-    if (!strcasecmp(cmd, "GB")) {
+    // whether half-step is enabled or not
+    if (!strcasecmp(cmd, "GH")) {
       if (myStepper.getStepMode() == FULLSTEP)
         Serial.print("00#");
       else
@@ -405,6 +442,12 @@ void loop(){
       Serial.print("10#");
       //Serial1.write("10#");
     }
+
+    // Custom commands for me
+    if (!strcasecmp(cmd, "IN")) {
+      printInfo();
+    }
+    
   }
   
 } // end loop
